@@ -18,11 +18,14 @@
 // | 01100                 | GBA_ROM_DATA_WRITE_FLIP | GBA ROM写16位数据 | 16         | 16位数据 | -           | 无返回 |
 // | 10000 - 11111         | RESERVED     | 预留命令     | -          | -                 | -           | -                  |
 
+#include <thread>
+#include <mutex>
+#include <list>
 #include <vector>
-#include <boost/dynamic_bitset.hpp>
 #include <string>
 #include <iostream>
 #include <unordered_map>
+#include <algorithm>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,8 +35,10 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
-
-typedef boost::dynamic_bitset<uint8_t> BitArray;
+#define READ_BATCH_SIZE (0xFF<<1)
+#define ROM_MAX_SIZE 0x2000000
+#define RAM_MAX_SIZE 0x20000
+#define SPI_BUFFER_SIZE 0x1000
 
 int fd;
 static char spi_dev_path[256] = "/dev/spidev3.0";
@@ -43,11 +48,8 @@ static uint32_t speed = 48000000; // 设置SPI速度为48MHz
 static bool lsb = false;
 static uint16_t delay = 0;
 
-static uint8_t tx_buffer[4096] = {0};
-static uint8_t rx_buffer[4096] = {0};
-
-static uint8_t reverse_bits_table[256] = {0};
-static uint16_t reverse_bits_table_16[65536] = {0};
+static uint8_t reverse_bits_table[0xFF+1] = {0};
+static uint16_t reverse_bits_table_16[0xFFFF+1] = {0};
 
 void set_speed(uint32_t speed) {
     speed = speed;
@@ -79,10 +81,10 @@ uint16_t reverse_bits_16bit(uint16_t word) {
 
 void spi_init(void) {
     // 初始化reverse_bits_table
-    for (size_t i = 0; i < 0xFF; i++) {
+    for (size_t i = 0; i <= 0xFF; i++) {
         reverse_bits_table[i] = _reverse_bits(i);
     }
-    for (size_t i = 0; i < 0xFFFF; i++) {
+    for (size_t i = 0; i <= 0xFFFF; i++) {
         reverse_bits_table_16[i] = _reverse_bits_16bit(i);
     }
     int ret;
@@ -170,6 +172,30 @@ std::vector<uint8_t> bits2bytes(const std::vector<bool> &bits) {
     return ret;
 }
 
+
+std::vector<uint8_t> slice_by_bitidx(const std::vector<uint8_t> &bytes, size_t begin, size_t end) {
+    std::vector<uint8_t> ret((end - begin + 7) / 8, 0);
+    size_t begin_byte = begin / 8;
+    size_t end_byte = (end+7) / 8;
+    size_t begin_bit = begin % 8;
+    for (size_t i = begin_byte; i < begin_byte + ((end - begin + 7) / 8); i++) {
+        uint8_t byte = 0;
+        if (i < bytes.size()) {
+            byte = bytes[i];
+        }
+        uint8_t next_byte = 0;
+        if (i + 1 < bytes.size() && i + 1 < end_byte) {
+            next_byte = bytes[i + 1];
+        }
+        ret[i - begin_byte] = (byte << begin_bit) | (next_byte >> (8 - begin_bit));
+    }
+    uint8_t padding = 8*ret.size() - (end - begin);
+    if (padding > 0) {
+        ret.back() &= 0xFF ^ ((1 << padding) - 1);
+    }
+    return ret;
+}
+
 std::string to_string(const std::vector<bool> &bits) {
     std::string str;
     for (size_t i = 0; i < bits.size(); i++) {
@@ -203,6 +229,21 @@ void transfer(int fd, uint8_t const *tx, uint8_t *rx, size_t len) {
     if (ret < 1) {
         perror("SPI transfer failed");
     }
+}
+
+std::vector<uint8_t> build_cmd(const std::vector<bool> &command) {
+    std::vector<uint8_t> tx_buffer = bits2bytes(command);
+    // 如果刚好是8的倍数，需要补一个0
+    if (tx_buffer.size() == command.size()/8) {
+        tx_buffer.push_back(0);
+    }
+    return tx_buffer;
+}
+
+std::vector<uint8_t> transfer(int fd, const std::vector<uint8_t> &tx_buffer) {
+    std::vector<uint8_t> rx_buffer(tx_buffer.size(), 0);
+    transfer(fd, (uint8_t const *)(tx_buffer.data()), rx_buffer.data(), tx_buffer.size());
+    return rx_buffer;
 }
 
 std::vector<uint8_t> transfer(int fd, const std::vector<std::vector<bool>> &commands) {
@@ -334,10 +375,10 @@ std::vector<std::unordered_map<std::string, uint32_t>> extract_read_cycle_data_3
     if (data.size() * 8 < (__readcyclecmd_30bit.size() + 1) * times) {
         throw "data must be " + std::to_string((__readcyclecmd_30bit.size() + 1) * times) + " bytes, but got " + std::to_string(data.size() * 8);
     }
-    std::vector<bool> databits = bytes2bits(data);
-    for (size_t i = 0; i < databits.size(); i += __readcyclecmd_30bit.size() + 1) {
-        std::vector<bool> one(databits.begin() + i + 8, databits.begin() + i + __readcyclecmd_30bit.size() + 1);
-        ret.push_back(extract_cart_30bit_read_data(bits2bytes(one)));
+    for (size_t i = 0; i < data.size()*8; i += __readcyclecmd_30bit.size() + 1) {
+        //std::vector<bool> one(databits.begin() + i + 8, databits.begin() + i + __readcyclecmd_30bit.size() + 1);
+        std::vector<uint8_t> one = slice_by_bitidx(data, i + 8, i + __readcyclecmd_30bit.size() + 1);
+        ret.push_back(extract_cart_30bit_read_data(one));
         if (ret.size() >= times) {
             break;
         }
@@ -381,10 +422,10 @@ std::vector<uint16_t> extract_read_cycle_data(const std::vector<uint8_t> &data, 
     if (data.size() * 8 < (__readcyclecmd.size() + 1) * times) {
         throw "data must be " + std::to_string((__readcyclecmd.size() + 1) * times) + " bytes, but got " + std::to_string(data.size() * 8);
     }
-    std::vector<bool> databits = bytes2bits(data);
-    for (size_t i = 0; i < databits.size(); i += __readcyclecmd.size() + 1) {
-        std::vector<bool> one(databits.begin() + i + 8, databits.begin() + i + __readcyclecmd.size() + 1);
-        ret.push_back(extract_gba_rom_read_data(bits2bytes(one)));
+    for (size_t i = 0; i < data.size()*8; i += __readcyclecmd.size() + 1) {
+        // std::vector<bool> one(databits.begin() + i + 8, databits.begin() + i + __readcyclecmd.size() + 1);
+        std::vector<uint8_t> one = slice_by_bitidx(data, i + 8, i + __readcyclecmd.size() + 1);
+        ret.push_back(extract_gba_rom_read_data(one));
         if (ret.size() >= times) {
             break;
         }
@@ -398,11 +439,15 @@ std::vector<bool> make_gba_rom_cs_write(bool cs) {
     return command;
 }
 
-std::vector<bool> make_rom_write_cycle_command_with_addr(const std::vector<std::pair<uint32_t, uint16_t>> &addrdatalist) {
+std::vector<bool> make_rom_write_cycle_command_with_addr(const std::vector<std::pair<uint32_t, uint16_t>> &addrdatalist, bool hwaddr = true) {
     std::vector<std::vector<bool>> commands;
     for (auto &kv : addrdatalist) {
+        auto addr = kv.first;
+        if (!hwaddr) {
+            addr = addr / 2;
+        }
         commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, true, kv.first & 0xFFFF, (kv.first >> 16) & 0xFF),
+            make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF),
             make_gba_rom_cs_write(false),
             make_gba_rom_data_write_command(kv.second, true)
         }));
@@ -410,12 +455,41 @@ std::vector<bool> make_rom_write_cycle_command_with_addr(const std::vector<std::
     return merge_cmds(commands);
 }
 
+std::vector<bool> make_rom_write_cycle_command_with_addr(
+    std::vector<std::pair<uint32_t, uint16_t>>::const_iterator begin, 
+    std::vector<std::pair<uint32_t, uint16_t>>::const_iterator end, bool hwaddr = true) {
+    std::vector<std::vector<bool>> commands;
+    for (auto it = begin; it != end; it++) {
+        auto addr = it->first;
+        if (!hwaddr) {
+            addr = addr / 2;
+        }
+        commands.push_back(merge_cmds({
+            make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF),
+            make_gba_rom_cs_write(false),
+            make_gba_rom_data_write_command(it->second, true)
+        }));
+    }
+    return merge_cmds(commands);
+}
+
 std::vector<bool> make_rom_write_cycle_command_sequential(const std::vector<uint16_t> &datalist) {
     std::vector<std::vector<bool>> commands;
-    for (auto &data : datalist) {
+    for (size_t i = 0; i < datalist.size(); i++) {
         commands.push_back(merge_cmds({
             make_gba_wr_rd_write_command(true, true),
-            make_gba_rom_data_write_command(data, true)
+            make_gba_rom_data_write_command(datalist[i], true)
+        }));
+    }
+    return merge_cmds(commands);
+}
+
+std::vector<bool> make_rom_write_cycle_command_sequential(std::vector<uint16_t>::const_iterator begin, std::vector<uint16_t>::const_iterator end) {
+    std::vector<std::vector<bool>> commands;
+    for (auto it = begin; it != end; it++) {
+        commands.push_back(merge_cmds({
+            make_gba_wr_rd_write_command(true, true),
+            make_gba_rom_data_write_command(*it, true)
         }));
     }
     return merge_cmds(commands);
@@ -473,15 +547,133 @@ size_t __len_of_v16bit_write = make_v16bit_data_write_command(0).size();
 size_t __len_of_v8bit_write = make_gba_rom_addr_read_command().size();
 std::vector<uint8_t> extract_ram_read_cycle_data(const std::vector<uint8_t> &data, int times = 1) {
     std::vector<uint8_t> ret;
-    std::vector<bool> databits = bytes2bits(data);
-    for (size_t i = 0; i < databits.size(); i += __len_of_v16bit_write + __len_of_v8bit_write + 2) {
-        std::vector<bool> one(databits.begin() + i + __len_of_v16bit_write + 1, databits.begin() + i + __len_of_v16bit_write + 1 + __len_of_v8bit_write + 1);
-        ret.push_back(extract_gba_rom_addr_read_data(bits2bytes(one)));
+    for (size_t i = 0; i < data.size()*8; i += __len_of_v16bit_write + __len_of_v8bit_write + 2) {
+        // std::vector<bool> one(databits.begin() + i + __len_of_v16bit_write + 1, databits.begin() + i + __len_of_v16bit_write + 1 + __len_of_v8bit_write + 1);
+        std::vector<uint8_t> one = slice_by_bitidx(data, i + __len_of_v16bit_write + 1, i + __len_of_v16bit_write + 1 + __len_of_v8bit_write + 1);
+        ret.push_back(extract_gba_rom_addr_read_data(one));
         if (ret.size() >= times) {
             break;
         }
     }
     return ret;
+}
+
+static std::unordered_map<size_t, std::vector<uint8_t>> __make_rom_read_cycle_command_cache;
+std::vector<uint8_t> make_rom_read_cycle_command_with_cache(size_t times = 1) {
+    if (__make_rom_read_cycle_command_cache.find(times) == __make_rom_read_cycle_command_cache.end()) {
+        __make_rom_read_cycle_command_cache[times] = build_cmd(make_rom_read_cycle_command(times));
+    }
+    return __make_rom_read_cycle_command_cache[times];
+}
+
+void ResetChip() {
+    transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
+}
+
+std::vector<uint8_t> AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr = false, bool reset = true) {
+    static int MAX_TIMES = SPI_BUFFER_SIZE / (make_rom_read_cycle_command_with_cache().size() + 1);
+    // prepare chip
+    // to halfword
+    if (!hwaddr) {
+        addr = addr / 2;
+        size = size / 2;
+    }
+    transfer(fd, {
+        make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF),
+        make_gba_rom_cs_write(false)
+    });
+    size_t lowaddr = addr & 0xFFFF;
+    size_t highaddr = (addr >> 16) & 0xFF;
+    // if lowaddr+1 == 0x10000, highaddr+1, and reset lowaddr
+    // prepare WriteRead stream
+    std::vector<uint8_t> readbytes;
+    int cycle_times = 0;
+    for (int i = 0; i < size; i++) {
+        cycle_times += 1;
+        lowaddr += 1;
+        if (lowaddr == 0x10000) {
+            if (cycle_times > 0) {
+                std::vector<uint8_t> ret = transfer(fd, make_rom_read_cycle_command_with_cache(cycle_times));
+                std::vector<uint16_t> exteds = extract_read_cycle_data(ret, cycle_times);
+                for (auto &exted : exteds) {
+                    readbytes.push_back(exted >> 8);
+                    readbytes.push_back(exted & 0xFF);
+                }
+                cycle_times = 0;
+            }
+            highaddr += 1;
+            lowaddr = 0;
+            if (highaddr <= 0xFF) {
+                // cs1 re-falling?
+                transfer(fd, {make_cart_30bit_write_command(false, false, true, true, false, true, 0, highaddr)});
+            }
+        }
+        if (cycle_times == MAX_TIMES || i == size - 1 && cycle_times > 0) {
+            std::vector<uint8_t> ret = transfer(fd, make_rom_read_cycle_command_with_cache(cycle_times));
+            std::vector<uint16_t> exteds = extract_read_cycle_data(ret, cycle_times);
+            for (auto &exted : exteds) {
+                readbytes.push_back(exted >> 8);
+                readbytes.push_back(exted & 0xFF);
+            }
+            cycle_times = 0;
+        }
+    }
+    // reset chip
+    if (reset) {
+        transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
+    }
+    return readbytes;
+}
+
+// AGBWriteROM 传入地址是byte地址
+void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data, bool hwaddr = false, bool reset = true) {
+    static int MAX_TIMES = SPI_BUFFER_SIZE / (make_rom_write_cycle_command_sequential({0}).size() + 1);
+    if (!hwaddr) { // if not hwaddr, addr is byte addr
+        addr = addr / 2;
+    }
+    transfer(fd, {
+        make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF),
+        make_gba_rom_cs_write(false)
+    });
+    size_t lowaddr = addr & 0xFFFF;
+    size_t highaddr = (addr >> 16) & 0xFF;
+    int cycle_times = 0;
+    for (size_t i = 0; i < data.size(); i++) {
+        cycle_times += 1;
+        lowaddr += 1;
+        if (lowaddr == 0x10000) {
+            if (cycle_times > 0) {
+                transfer(fd, make_rom_write_cycle_command_sequential(data.begin() + i + 1 - cycle_times, data.begin() + i + 1));
+            }
+            highaddr += 1;
+            lowaddr = 0;
+            if (highaddr <= 0xFF) {
+                // cs1 re-falling?
+                transfer(fd, {make_cart_30bit_write_command(false, false, true, true, false, true, 0, highaddr)});
+            }
+        }
+        if (cycle_times == MAX_TIMES || i == data.size() - 1 && cycle_times > 0) {
+            transfer(fd, make_rom_write_cycle_command_sequential(data.begin() + i + 1 - cycle_times, data.begin() + i + 1));
+        }
+    }
+    if (reset) {
+        transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
+    }
+}
+
+// AGBWriteROMWithAddress 传入地址是byte地址
+void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &commands, bool hwaddr = false) {
+    static int MAX_TIMES = SPI_BUFFER_SIZE / (make_rom_write_cycle_command_with_addr({{0, 0}}).size() + 1);
+    int cycle_times = 0;
+    for (size_t i = 0; i < commands.size(); i++) {
+        // transfer(fd, {make_rom_write_cycle_command_with_addr({commands[i]}, hwaddr)});
+        if (cycle_times == MAX_TIMES || i == commands.size() - 1) {
+            transfer(fd, make_rom_write_cycle_command_with_addr({commands.begin() + i + 1 - cycle_times, commands.begin() + i + 1}, hwaddr));
+            cycle_times = 0;
+        }
+    }
+    // reset chip
+    transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
 }
 
 ///////// C++ Interface /////////
@@ -492,7 +684,6 @@ std::vector<uint8_t> extract_ram_read_cycle_data(const std::vector<uint8_t> &dat
 
 int main(int argc, char *argv[])
 {
-
     // 初始化SPI接口
     spi_init();
     // 上电,3.3v
@@ -500,23 +691,18 @@ int main(int argc, char *argv[])
     // 读取电源状态
     std::vector<uint8_t> rx_buffer = transfer(fd, {make_power_read_command()});
     printf("Power status: %s\n", to_string(bytes2bits(rx_buffer)).c_str());
-
-    // 写30位数据
-    transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
-    transfer(fd, {make_gba_rom_cs_write(false)});
-    // 读取30位数据
-    rx_buffer = transfer(fd, {make_cart_30bit_read_command()});
-    printf("30bit data: %s\n", to_string(bytes2bits(rx_buffer)).c_str());
-    printf("Extracted data: %s\n", to_string(extract_cart_30bit_read_data(rx_buffer)).c_str());
-    // 一次读取2bytesx100，一共读取32MBytes
-        time_t start = time(NULL);
-    for (int i = 0; i < 1024 * 1024 / 2; i+=0xFF) {
-        std::vector<uint8_t> data = transfer(fd, make_rom_read_cycle_command(0xFF));
-        std::vector<uint16_t> v16bitdata = extract_read_cycle_data(data, 0xFF);
-        if (i % 0xFFFF == 0) {
-            printf("Speed: %f KB/s; 0x%04x at 0x%04x\n", ((i * 2)/1024) / ((time(NULL) - start)*1.0), v16bitdata[0], i);
-        }
+    time_t start = time(NULL);
+    std::vector<uint8_t> rom = AGBReadROM(0, ROM_MAX_SIZE);
+    time_t end = time(NULL);
+    printf("Read ROM data cost %ld seconds, speed: %fKB/s\n", end - start, ROM_MAX_SIZE / (end - start) / 1024.0);
+    // write to test_out.gba
+    FILE *fp = fopen("test_out.gba", "wb");
+    if (fp == NULL) {
+        perror("Can't open file");
+        exit(1);
     }
+    fwrite(rom.data(), 1, rom.size(), fp);
+    fclose(fp);
     // 关闭SPI设备
     close(fd);
 

@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-I/usr/include/boost -Wall -std=c++20 -O2
+CFLAGS=-std=c++20 -O2
 LDFLAGS=
 SOURCES=$(wildcard *.cc)
 OBJECTS=$(SOURCES:.cc=.o)
