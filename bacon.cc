@@ -27,10 +27,9 @@
 #include <unordered_map>
 #include <algorithm>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -657,6 +656,7 @@ uint64_t timems() {
     clock_gettime(CLOCK_MONOTONIC, &ts); // 使用单调时钟
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
 }
+
 int main(int argc, char *argv[])
 {
     // 初始化SPI接口

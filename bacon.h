@@ -1,13 +1,9 @@
 #ifndef __BACON_H__
 #define __BACON_H__
+#include <cstdint>
 
 #ifdef __cplusplus
 extern "C" {
-#else
-typedef unsigned char bool;
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int uint32_t;
 #endif
 
 void set_dev_path(const char *path);

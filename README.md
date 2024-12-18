@@ -15,3 +15,8 @@ LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libtcmalloc_minimal.so.4 ./your_program
 ```bash
 g++ -std=c++20 -O3 bacon.cc -ltcmalloc_minimal
 ```
+
+## 4. Run With ionice & nice
+```bash
+sudo ionice -c 3 -n 7 nice -n 20 ./your_program
+```
