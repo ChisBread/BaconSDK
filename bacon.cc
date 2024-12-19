@@ -44,6 +44,7 @@ using namespace bacon;
 
 #define ROM_MAX_SIZE 0x2000000
 #define RAM_MAX_SIZE 0x20000
+#define RAM_512_SIZE 0x10000
 #define SPI_BUFFER_SIZE 0x1000
 
 int fd;
@@ -241,7 +242,7 @@ BitArray make_v16bit_data_write_command(uint16_t data, bool flip = false) {
         command = BitArray({0, 1, 1, 0, 0});
     }
     // little endian
-    BitArray v16bit(vecbytes{uint8_t(data & 0xff), uint8_t((data >> 8) & 0xff)});
+    BitArray v16bit(vecbytes{uint8_t((data >> 8) & 0xff), uint8_t(data & 0xff)});
     command.push_back(v16bit);
     return command;
 }
@@ -290,10 +291,6 @@ BitArray make_gba_rom_data_read_command(bool flip = false) {
     return command;
 }
 
-uint16_t extract_gba_rom_read_data(const vecbytes &data) {
-    return reverse_bits_16bit(((data[1]) << 8) | (data[0]));
-}
-
 BitArray __readcyclecmd = merge_cmds({
     make_gba_wr_rd_write_command(true, false),
     make_gba_rom_data_read_command(true)});
@@ -313,7 +310,7 @@ std::vector<uint16_t> extract_read_cycle_data(const vecbytes &data, int times = 
     size_t idx = 0;
     for (size_t i = 0; i < data.size()*8; i += __readcyclecmd.size() + 1) {
         vecbytes one = slice_by_bitidx(data, i + 8 + 6, i + 8 + 6 + 16);
-        ret[idx++] = extract_gba_rom_read_data(one);
+        ret[idx++] = reverse_bits_16bit(((one[1]) << 8) | (one[0]));
         if (idx >= times) {
             break;
         }
@@ -391,10 +388,6 @@ BitArray make_gba_rom_addr_read_command() {
     return command;
 }
 
-uint8_t extract_gba_rom_addr_read_data(const vecbytes &data) {
-    return reverse_bits((data[0] << 6) | (data[1] >> 2));
-}
-
 BitArray make_ram_write_cycle_with_addr(const std::vector<std::pair<uint16_t, uint8_t>> &addrdatalist) {
     std::vector<BitArray> commands;
     for (auto &kv : addrdatalist) {
@@ -429,13 +422,12 @@ BitArray make_ram_read_cycle_command(uint16_t addr = 0, int times = 1) {
 }
 
 size_t __len_of_v16bit_write = make_v16bit_data_write_command(0).size();
-size_t __len_of_v8bit_write = make_gba_rom_addr_read_command().size();
+size_t __len_of_v8bit_read = make_gba_rom_addr_read_command().size();
 vecbytes extract_ram_read_cycle_data(const vecbytes &data, int times = 1) {
     vecbytes ret;
-    for (size_t i = 0; i < data.size()*8; i += __len_of_v16bit_write + __len_of_v8bit_write + 2) {
-        // BitArray one(databits.begin() + i + __len_of_v16bit_write + 1, databits.begin() + i + __len_of_v16bit_write + 1 + __len_of_v8bit_write + 1);
-        vecbytes one = slice_by_bitidx(data, i + __len_of_v16bit_write + 1, i + __len_of_v16bit_write + 1 + __len_of_v8bit_write + 1);
-        ret.push_back(extract_gba_rom_addr_read_data(one));
+    for (size_t i = 0; i < data.size()*8; i += __len_of_v16bit_write + __len_of_v8bit_read + 2) {
+        vecbytes one = slice_by_bitidx(data, i + __len_of_v16bit_write + 1 + 6, i + __len_of_v16bit_write + 1 + __len_of_v8bit_read + 1 + 6);
+        ret.push_back(reverse_bits(one[0]));
         if (ret.size() >= times) {
             break;
         }
@@ -449,12 +441,18 @@ void ResetChip() {
     transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
 }
 
-vecbytes __make_rom_read_cycle_command_cache[0xFFFF];
+std::unordered_map<size_t, vecbytes> __make_rom_read_cycle_command_cache;
 vecbytes make_rom_read_cycle_command_with_cache(size_t times = 1) {
-    if (__make_rom_read_cycle_command_cache[times].size() == 0) {
+    if (__make_rom_read_cycle_command_cache.find(times) == __make_rom_read_cycle_command_cache.end()) {
         __make_rom_read_cycle_command_cache[times] = build_cmd(make_rom_read_cycle_command(times));
     }
     return __make_rom_read_cycle_command_cache[times];
+}
+void init_rom_read_cycle_command_cache() {
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_read_cycle_command().size() + 1) - 1;
+    for (size_t i = 1; i <= MAX_TIMES; i++) {
+        make_rom_read_cycle_command_with_cache(i);
+    }
 }
 
 vecbytes AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr = false, bool reset = true) {
@@ -563,6 +561,51 @@ void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &co
     transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
 }
 
+std::unordered_map<size_t, std::unordered_map<size_t, vecbytes>> __make_ram_read_cycle_command_cache;
+vecbytes make_ram_read_cycle_command_with_cache(uint16_t addr, size_t times = 1) {
+    if (__make_ram_read_cycle_command_cache.find(addr) == __make_ram_read_cycle_command_cache.end()) {
+        __make_ram_read_cycle_command_cache[addr] = std::unordered_map<size_t, vecbytes>();
+    }
+    if (__make_ram_read_cycle_command_cache[addr].find(times) == __make_ram_read_cycle_command_cache[addr].end()) {
+        __make_ram_read_cycle_command_cache[addr][times] = build_cmd(make_ram_read_cycle_command(addr, times));
+    }
+    return __make_ram_read_cycle_command_cache[addr][times];
+}
+
+void init_ram_read_cycle_command_cache() {
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_ram_read_cycle_command(0).size() + 1) - 1;
+    for (size_t i = 0; i < RAM_512_SIZE; i+=MAX_TIMES) {
+        make_ram_read_cycle_command_with_cache(i, MAX_TIMES);
+    }
+}
+
+void init_all_cache() {
+    init_rom_read_cycle_command_cache();
+    init_ram_read_cycle_command_cache();
+}
+
+vecbytes AGBReadRAM(uint16_t addr, uint32_t size, bool reset = true) {
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_ram_read_cycle_command(0).size() + 1) - 1;
+    transfer(fd, {make_cart_30bit_write_command(false, false, true, false, true, false, addr, 0)});
+    vecbytes readbytes;
+    uint16_t start_addr = addr;
+    int cycle_times = 0;
+    for (int i = 0; i < size; i++) {
+        cycle_times += 1;
+        if (cycle_times == MAX_TIMES || i == size - 1 && cycle_times > 0) {
+            vecbytes ret = transfer(fd, make_ram_read_cycle_command_with_cache(start_addr, cycle_times));
+            vecbytes exteds = extract_ram_read_cycle_data(ret, cycle_times);
+            readbytes.insert(readbytes.end(), exteds.begin(), exteds.end());
+            start_addr += cycle_times;
+            cycle_times = 0;
+        }
+    }
+    if (reset) {
+        transfer(fd, {make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
+    }
+    return readbytes;
+}
+
 ///////// C++ Interface /////////
 
 ///////// C Interface /////////
@@ -657,15 +700,7 @@ uint64_t timems() {
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
 }
 
-int main(int argc, char *argv[])
-{
-    // 初始化SPI接口
-    spi_init();
-    // 上电,3.3v
-    transfer(fd, {make_power_control_command(true, false)});
-    // 读取电源状态
-    vecbytes rx_buffer = transfer(fd, {make_power_read_command()});
-    printf("Power status: %s\n", to_string(BitArray(rx_buffer)).c_str());
+int test_readrom() {
     auto start = timems();
     vecbytes rom = AGBReadROM(0, ROM_MAX_SIZE);
     for(size_t i = 0; i < 10; i++) {
@@ -682,6 +717,48 @@ int main(int argc, char *argv[])
     }
     fwrite(rom.data(), 1, rom.size(), fp);
     fclose(fp);
+    return 0;
+}
+
+int test_readram() {
+    auto start = timems();
+    vecbytes ram = AGBReadRAM(0, RAM_512_SIZE);
+    for(size_t i = 0; i < 10; i++) {
+        printf("%02x", ram[i]);
+    }
+    printf("\n");
+    auto cost = timems()-start;
+    printf("Read RAM data cost %f seconds, speed: %fKB/s\n", cost/1000.0, RAM_512_SIZE / (cost/1000.0) / 1024.0);
+    // write to test_out.gba
+    FILE *fp = fopen("test_out.sav", "wb");
+    if (fp == NULL) {
+        perror("Can't open file");
+        exit(1);
+    }
+    fwrite(ram.data(), 1, ram.size(), fp);
+    fclose(fp);
+    return 0;
+}
+
+
+int main(int argc, char *argv[]) {
+    if (argc == 0) {
+        printf("Usage: %s test_readrom|test_readram\n", argv[0]);
+    }
+    // 初始化缓存
+    init_all_cache();
+    // 初始化SPI接口
+    spi_init();
+    // 上电,3.3v
+    transfer(fd, {make_power_control_command(true, false)});
+    // 读取电源状态
+    vecbytes rx_buffer = transfer(fd, {make_power_read_command()});
+    printf("Power status: %s\n", to_string(BitArray(rx_buffer)).c_str());
+    if (strcmp(argv[1], "test_readrom") == 0) {
+        test_readrom();
+    } else if (strcmp(argv[1], "test_readram") == 0) {
+        test_readram();
+    }
     // 断电
     transfer(fd, {make_power_control_command(false, false)});
     // 读取电源状态
@@ -689,8 +766,4 @@ int main(int argc, char *argv[])
     printf("Power status: %s\n", to_string(BitArray(rx_buffer)).c_str());
     // 关闭SPI设备
     close(fd);
-
-    return 0;
 }
-
-
