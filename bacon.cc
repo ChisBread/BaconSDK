@@ -458,7 +458,7 @@ vecbytes make_rom_read_cycle_command_with_cache(size_t times = 1) {
 }
 
 vecbytes AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr = false, bool reset = true) {
-    static int MAX_TIMES = SPI_BUFFER_SIZE / (make_rom_read_cycle_command_with_cache().size() + 1);
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_read_cycle_command().size() + 1) - 1;
     // prepare chip
     // to halfword
     if (!hwaddr) {
@@ -514,7 +514,7 @@ vecbytes AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr = false, bool rese
 
 // AGBWriteROM 传入地址是byte地址
 void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data, bool hwaddr = false, bool reset = true) {
-    static int MAX_TIMES = SPI_BUFFER_SIZE / (make_rom_write_cycle_command_sequential({0}).size() + 1);
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_write_cycle_command_sequential({0}).size() + 1) - 1;
     if (!hwaddr) { // if not hwaddr, addr is byte addr
         addr = addr / 2;
     }
@@ -550,7 +550,7 @@ void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data,
 
 // AGBWriteROMWithAddress 传入地址是byte地址
 void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &commands, bool hwaddr = false) {
-    static int MAX_TIMES = SPI_BUFFER_SIZE / (make_rom_write_cycle_command_with_addr({{0, 0}}).size() + 1);
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_write_cycle_command_with_addr({{0, 0}}).size() + 1) - 1;
     int cycle_times = 0;
     for (size_t i = 0; i < commands.size(); i++) {
         // transfer(fd, {make_rom_write_cycle_command_with_addr({commands[i]}, hwaddr)});
