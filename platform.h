@@ -10,7 +10,8 @@
 extern "C" {
 #endif
 
-int spi_init(const char *user_path, uint32_t user_speed, unsigned char verbose);
+int spi_init(const char *user_path, uint32_t user_speed, bool verbose);
+void spi_close();
 
 #ifdef __cplusplus
 }

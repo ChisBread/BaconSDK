@@ -79,9 +79,6 @@ std::string to_string(const std::unordered_map<std::string, uint32_t> &data) {
 
 
 BitArray make_power_control_command(bool v3_3v, bool v5v) {
-    if (v3_3v && v5v) {
-        throw "Invalid power control command";
-    }
     BitArray command({0, 0, 0, 1, 1});
     command.push_back(!v3_3v);
     command.push_back(v5v);

@@ -44,6 +44,13 @@ void ResetChip() {
     transfer({make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
 }
 
+int PowerControl(bool v3_3v, bool v5v) {
+    if (v3_3v && v5v) {
+        return -1;
+    }
+    transfer({make_power_control_command(v3_3v, v5v)});
+    return 0;
+}
 
 vecbytes AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr, bool reset) {
     static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_read_cycle_command().size() + 1) - 1;
@@ -181,6 +188,10 @@ vecbytes AGBReadRAM(uint16_t addr, uint32_t size, bool reset) {
 
 void reset_chip() {
     bacon::ResetChip();
+}
+
+int power_control(bool v3_3v, bool v5v) {
+    return bacon::PowerControl(v3_3v, v5v);
 }
 
 void agb_read_rom(uint32_t addr, uint32_t size, bool hwaddr, bool reset, uint8_t *rx_buffer) {

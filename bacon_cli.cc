@@ -84,6 +84,6 @@ int main(int argc, char *argv[]) {
     rx_buffer = transfer({make_power_read_command()});
     printf("Power status: %s\n", to_string(BitArray(rx_buffer)).c_str());
     // 关闭SPI设备
-    spi_close();
+    bacon::spi_close();
     stop_low_latency();
 }

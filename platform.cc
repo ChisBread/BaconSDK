@@ -128,7 +128,7 @@ vecbytes transfer(const BitArray &command) {
 
 ///////// C Interface /////////
 
-int spi_init(const char *user_path, uint32_t user_speed, unsigned char verbose) {
+int spi_init(const char *user_path, uint32_t user_speed, bool verbose) {
     return bacon::spi_init(user_path, user_speed, verbose);
 }
 
