@@ -4,4 +4,4 @@ bacon
 build/
 *.o
 *.gch
-*.gba
+test_out.*
