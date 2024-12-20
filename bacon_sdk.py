@@ -22,7 +22,7 @@ RAM_512_SIZE = 0x10000
 class Bacon:
     def __init__(self, libbacon=None):
         if libbacon is None:
-            find_list = [os.path.join(os.path.dirname(__file__), "build/libbacon.so"), "/usr/local/lib/libbacon.so", "/usr/lib/libbacon.so"]
+            find_list = [os.path.join(os.path.dirname(__file__), "libbacon.so"), os.path.join(os.path.dirname(__file__), "build/libbacon.so"), "/usr/local/lib/libbacon.so", "/usr/lib/libbacon.so"]
             for libbacon_path in find_list:
                 if os.path.exists(libbacon_path):
                     self.libbacon = ctypes.CDLL(libbacon_path)
