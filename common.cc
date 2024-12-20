@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 
+#include "platform.h"
+
 namespace bacon {
 
 
@@ -418,12 +420,14 @@ void init_ram_read_cycle_command_cache(size_t spi_buffer_size) {
     }
 }
 
-void init_all_cache(size_t spi_buffer_size) {
+int init_all_cache(size_t spi_buffer_size) {
     init_reverse_bits_table();
     init_rom_read_cycle_command_cache(spi_buffer_size);
     init_ram_read_cycle_command_cache(spi_buffer_size);
+    return 0;
 }
 
+int __init_all_cache = init_all_cache(SPI_BUFFER_SIZE);
 
 static int pm_qos_fd = -1;
 int start_low_latency(void) {

@@ -1,8 +1,13 @@
 #ifndef __COMMANDS_H__
 #define __COMMANDS_H__
 
+#include <cstdint>
+#include <vector>
+#include <string>
+#include <unordered_map>
+
 #include "bitarray.hpp"
-#include "workerpool.hpp"
+
 #define ROM_MAX_SIZE 0x2000000
 #define RAM_MAX_SIZE 0x20000
 #define RAM_512_SIZE 0x10000
@@ -50,7 +55,6 @@ vecbytes make_ram_read_cycle_command_with_cache(uint16_t addr, size_t times = 1)
 
 uint8_t reverse_bits(uint8_t byte);
 uint16_t reverse_bits_16bit(uint16_t word);
-void init_all_cache(size_t spi_buffer_size);
 int start_low_latency(void);
 void stop_low_latency(void);
 } // namespace bacon

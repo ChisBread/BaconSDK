@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <time.h>
+
 #include "bacon.h"
 
 using namespace bacon;
@@ -60,8 +62,6 @@ int main(int argc, char *argv[]) {
     }
     //
     start_low_latency();
-    // 初始化缓存
-    init_all_cache(SPI_BUFFER_SIZE);
     // 初始化SPI接口
     int ret = spi_init();
     if (ret < 0) {

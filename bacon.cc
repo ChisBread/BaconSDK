@@ -141,9 +141,9 @@ void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &co
     static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_write_cycle_command_with_addr({{0, 0}}).size() + 1) - 1;
     int cycle_times = 0;
     for (size_t i = 0; i < commands.size(); i++) {
-        // transfer({make_rom_write_cycle_command_with_addr({commands[i]}, hwaddr)});
+        cycle_times += 1;
         if (cycle_times == MAX_TIMES || i == commands.size() - 1) {
-            transfer(make_rom_write_cycle_command_with_addr({commands.begin() + i + 1 - cycle_times, commands.begin() + i + 1}, hwaddr));
+            transfer(make_rom_write_cycle_command_with_addr(commands.begin() + i + 1 - cycle_times, commands.begin() + i + 1, hwaddr));
             cycle_times = 0;
         }
     }
