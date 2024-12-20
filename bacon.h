@@ -8,8 +8,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-void ResetChip();
 
+void reset_chip();
+void agb_read_rom(uint32_t addr, uint32_t size, bool hwaddr, bool reset, uint8_t *rx_buffer);
+void agb_write_rom_sequential(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset);
+void agb_write_rom_with_address(const std::pair<uint32_t, uint16_t> *commands, size_t size, bool hwaddr);
+void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer);
 
 #ifdef __cplusplus
 }

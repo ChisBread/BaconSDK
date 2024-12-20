@@ -63,7 +63,11 @@ int main(int argc, char *argv[]) {
     // 初始化缓存
     init_all_cache(SPI_BUFFER_SIZE);
     // 初始化SPI接口
-    spi_init();
+    int ret = spi_init();
+    if (ret < 0) {
+        printf("spi_init failed %d\n", ret);
+        return ret;
+    }
     // 上电,3.3v
     transfer({make_power_control_command(true, false)});
     // 读取电源状态

@@ -175,9 +175,32 @@ vecbytes AGBReadRAM(uint16_t addr, uint32_t size, bool reset) {
 
 ///////// C++ Interface /////////
 
-///////// C Interface /////////
-
-
-///////// C Interface /////////
-
 } // namespace bacon
+
+///////// C Interface /////////
+
+void reset_chip() {
+    bacon::ResetChip();
+}
+
+void agb_read_rom(uint32_t addr, uint32_t size, bool hwaddr, bool reset, uint8_t *rx_buffer) {
+    bacon::vecbytes ret = bacon::AGBReadROM(addr, size, hwaddr, reset);
+    std::copy(ret.begin(), ret.end(), rx_buffer);
+}
+
+void agb_write_rom_sequential(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset) {
+    std::vector<uint16_t> data_vec(data, data + size);
+    bacon::AGBCartWriteROMSequential(addr, data_vec, hwaddr, reset);
+}
+
+void agb_write_rom_with_address(const std::pair<uint32_t, uint16_t> *commands, size_t size, bool hwaddr) {
+    std::vector<std::pair<uint32_t, uint16_t>> commands_vec(commands, commands + size);
+    bacon::AGBWriteROMWithAddress(commands_vec, hwaddr);
+}
+
+void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer) {
+    bacon::vecbytes ret = bacon::AGBReadRAM(addr, size, reset);
+    std::copy(ret.begin(), ret.end(), rx_buffer);
+}
+
+///////// C Interface /////////

@@ -12,7 +12,7 @@
 namespace bacon {
 // linux spidev 实现
 #ifdef __linux__
-int fd;
+int fd = -1;
 static char spi_dev_path[256] = "/dev/spidev3.0";
 static unsigned mode = SPI_MODE_3;
 static uint8_t bits = 8;
@@ -20,7 +20,7 @@ static uint32_t speed = 32000000; // 设置SPI速度为48MHz
 static bool lsb = false;
 static uint16_t delay = 0;
 
-void spi_init(const char *user_path, uint32_t user_speed) {
+int spi_init(const char *user_path, uint32_t user_speed, bool verbose) {
     if (user_path != NULL) {
         strcpy(spi_dev_path, user_path);
     }
@@ -32,45 +32,51 @@ void spi_init(const char *user_path, uint32_t user_speed) {
     fd = open(spi_dev_path, O_RDWR);
     if (fd < 0) {
         perror("Can't open SPI device");
-        exit(1);
+        return -1;
     }
 
     // 设置 SPI 工作模式
     ret = ioctl(fd, SPI_IOC_WR_MODE, &mode);
     if (ret == -1) {
         perror("Can't set SPI mode");
-        exit(1);
+        return -2;
     }
 
     // 设置位数
     ret = ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
     if (ret == -1) {
         perror("Can't set bits per word");
-        exit(1);
+        return -3;
     }
 
     // 设置SPI速度
     ret = ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
     if (ret == -1) {
         perror("Can't set max speed");
-        exit(1);
+        return -4;
     }
 
     // 设置字节序
     ret = ioctl(fd, SPI_IOC_WR_LSB_FIRST, &lsb);
     if (ret == -1) {
         perror("Can't set lsb");
-        exit(1);
+        return -5;
     }
 
-    // 打印设置
-    printf("SPI mode: 0x%x\n", mode);
-    printf("Bits per word: %d\n", bits);
-    printf("Max speed: %d Hz\n", speed);
-    printf("LSB: %s\n", lsb ? "yes" : "no");
+    if (verbose) {
+        // 打印设置
+        printf("SPI mode: 0x%x\n", mode);
+        printf("Bits per word: %d\n", bits);
+        printf("Max speed: %d Hz\n", speed);
+        printf("LSB: %s\n", lsb ? "yes" : "no");
+    }
+    return 0;
 }
 
 void spi_close() {
+    if (fd == -1) {
+        return;
+    }
     close(fd);
 }
 
@@ -118,3 +124,16 @@ vecbytes transfer(const BitArray &command) {
 #endif // __linux__
 
 } // namespace bacon
+
+
+///////// C Interface /////////
+
+int spi_init(const char *user_path, uint32_t user_speed, unsigned char verbose) {
+    return bacon::spi_init(user_path, user_speed, verbose);
+}
+
+void spi_close() {
+    bacon::spi_close();
+}
+
+///////// C Interface /////////
