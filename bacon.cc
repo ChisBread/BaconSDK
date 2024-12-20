@@ -108,7 +108,7 @@ vecbytes AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr, bool reset) {
 }
 
 // AGBWriteROM 传入地址是byte地址
-void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data, bool hwaddr, bool reset) {
+void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data, bool hwaddr, bool reset, transfer_func transfer) {
     static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_write_cycle_command_sequential({0}).size() + 1) - 1;
     if (!hwaddr) { // if not hwaddr, addr is byte addr
         addr = addr / 2;
@@ -125,7 +125,7 @@ void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data,
         lowaddr += 1;
         if (lowaddr == 0x10000) {
             if (cycle_times > 0) {
-                transfer(make_rom_write_cycle_command_sequential(data.begin() + i + 1 - cycle_times, data.begin() + i + 1));
+                transfer({make_rom_write_cycle_command_sequential(data.begin() + i + 1 - cycle_times, data.begin() + i + 1)});
             }
             highaddr += 1;
             lowaddr = 0;
@@ -135,7 +135,7 @@ void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data,
             }
         }
         if (cycle_times == MAX_TIMES || i == data.size() - 1 && cycle_times > 0) {
-            transfer(make_rom_write_cycle_command_sequential(data.begin() + i + 1 - cycle_times, data.begin() + i + 1));
+            transfer({make_rom_write_cycle_command_sequential(data.begin() + i + 1 - cycle_times, data.begin() + i + 1)});
         }
     }
     if (reset) {
@@ -144,13 +144,13 @@ void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data,
 }
 
 // AGBWriteROMWithAddress 传入地址是byte地址
-void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &commands, bool hwaddr) {
+void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &commands, bool hwaddr, transfer_func transfer) {
     static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_rom_write_cycle_command_with_addr({{0, 0}}).size() + 1) - 1;
     int cycle_times = 0;
     for (size_t i = 0; i < commands.size(); i++) {
         cycle_times += 1;
         if (cycle_times == MAX_TIMES || i == commands.size() - 1) {
-            transfer(make_rom_write_cycle_command_with_addr(commands.begin() + i + 1 - cycle_times, commands.begin() + i + 1, hwaddr));
+            transfer({make_rom_write_cycle_command_with_addr(commands.begin() + i + 1 - cycle_times, commands.begin() + i + 1, hwaddr)});
             cycle_times = 0;
         }
     }
@@ -204,8 +204,11 @@ void agb_write_rom_sequential(uint32_t addr, const uint16_t *data, size_t size, 
     bacon::AGBCartWriteROMSequential(addr, data_vec, hwaddr, reset);
 }
 
-void agb_write_rom_with_address(const std::pair<uint32_t, uint16_t> *commands, size_t size, bool hwaddr) {
-    std::vector<std::pair<uint32_t, uint16_t>> commands_vec(commands, commands + size);
+void agb_write_rom_with_address(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr) {
+    std::vector<std::pair<uint32_t, uint16_t>> commands_vec;
+    for (size_t i = 0; i < size; i++) {
+        commands_vec.push_back({addrs[i], datas[i]});
+    }
     bacon::AGBWriteROMWithAddress(commands_vec, hwaddr);
 }
 
@@ -213,5 +216,51 @@ void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer) 
     bacon::vecbytes ret = bacon::AGBReadRAM(addr, size, reset);
     std::copy(ret.begin(), ret.end(), rx_buffer);
 }
+
+// pipeline
+std::mutex pipeline_mutex;
+std::vector<bacon::BitArray> collect_commands;
+bacon::vecbytes fake_transfer_for_pipeline(const std::vector<bacon::BitArray> &commands) {
+    std::lock_guard<std::mutex> lock(pipeline_mutex);
+    collect_commands.insert(collect_commands.end(), commands.begin(), commands.end());
+    return {};
+}
+
+void clear_pipeline() {
+    collect_commands.clear();
+}
+
+void execute_pipeline() {
+    // SPI_BUFFER_SIZE
+    int bits = -1;
+    std::vector<bacon::BitArray> tx_commands;
+    for (auto &command : collect_commands) {
+        if (bits + 1 + command.size() >= SPI_BUFFER_SIZE*8) {
+            bacon::transfer(tx_commands);
+            tx_commands.clear();
+            bits = -1;
+        }
+        tx_commands.push_back(command);
+        bits += command.size() + 1;
+    }
+    if (tx_commands.size() > 0) {
+        bacon::transfer(tx_commands);
+    }
+    collect_commands.clear();
+}
+
+void agb_write_rom_sequential_pipeline(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset) {
+    std::vector<uint16_t> data_vec(data, data + size);
+    bacon::AGBCartWriteROMSequential(addr, data_vec, hwaddr, reset, fake_transfer_for_pipeline);
+}
+
+void agb_write_rom_with_address_pipeline(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr) {
+    std::vector<std::pair<uint32_t, uint16_t>> commands_vec;
+    for (size_t i = 0; i < size; i++) {
+        commands_vec.push_back({addrs[i], datas[i]});
+    }
+    bacon::AGBWriteROMWithAddress(commands_vec, hwaddr, fake_transfer_for_pipeline);
+}
+
 
 ///////// C Interface /////////

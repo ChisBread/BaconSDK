@@ -8,8 +8,12 @@
 # int power_control(bool v3_3v, bool v5v);
 # void agb_read_rom(uint32_t addr, uint32_t size, bool hwaddr, bool reset, uint8_t *rx_buffer);
 # void agb_write_rom_sequential(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset);
-# void agb_write_rom_with_address(const std::pair<uint32_t, uint16_t> *commands, size_t size, bool hwaddr);
+# void agb_write_rom_with_address(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr)
 # void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer);
+# void clear_pipeline();
+# void execute_pipeline();
+# void agb_write_rom_sequential_pipeline(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset);
+# void agb_write_rom_with_address_pipeline(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr);
 
 import ctypes
 import os
@@ -49,6 +53,15 @@ class Bacon:
         self.libbacon.agb_read_ram.argtypes = [ctypes.c_uint16, ctypes.c_uint32, ctypes.c_bool, ctypes.POINTER(ctypes.c_uint8)]
         self.libbacon.agb_read_ram.restype = None
 
+        self.libbacon.clear_pipeline.argtypes = []
+        self.libbacon.clear_pipeline.restype = None
+        self.libbacon.execute_pipeline.argtypes = []
+        self.libbacon.execute_pipeline.restype = None
+        self.libbacon.agb_write_rom_sequential_pipeline.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
+        self.libbacon.agb_write_rom_sequential_pipeline.restype = None
+        self.libbacon.agb_write_rom_with_address_pipeline.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool]
+        self.libbacon.agb_write_rom_with_address_pipeline.restype = None
+
     def spi_init(self, user_path, user_speed, verbose):
         return self.libbacon.spi_init(user_path, user_speed, verbose)
     
@@ -66,11 +79,13 @@ class Bacon:
         self.libbacon.agb_read_rom(addr, size, hwaddr, reset, rx_buffer)
         return rx_buffer
 
-    def agb_write_rom_sequential(self, addr, data, size, hwaddr = False, reset = True):
+    def agb_write_rom_sequential(self, addr, data, hwaddr = False, reset = True):
+        size = len(data)
         data = (ctypes.c_uint16 * size)(*data)
         self.libbacon.agb_write_rom_sequential(addr, data, size, hwaddr, reset)
 
-    def agb_write_rom_with_address(self, commands, size, hwaddr = False):
+    def agb_write_rom_with_address(self, commands, hwaddr = False):
+        size = len(commands[0])
         commands = (
             (ctypes.c_uint32 * size)(*[command[0] for command in commands]),
             (ctypes.c_uint16 * size)(*[command[1] for command in commands])
@@ -81,6 +96,25 @@ class Bacon:
         rx_buffer = (ctypes.c_uint8 * size)()
         self.libbacon.agb_read_ram(addr, size, reset, rx_buffer)
         return rx_buffer
+
+    def clear_pipeline(self):
+        return self.libbacon.clear_pipeline()
+    
+    def execute_pipeline(self):
+        return self.libbacon.execute_pipeline()
+    
+    def agb_write_rom_sequential_pipeline(self, addr, data, hwaddr = False, reset = True):
+        size = len(data)
+        data = (ctypes.c_uint16 * size)(*data)
+        self.libbacon.agb_write_rom_sequential_pipeline(addr, data, size, hwaddr, reset)
+
+    def agb_write_rom_with_address_pipeline(self, commands, hwaddr = False):
+        size = len(commands[0])
+        commands = (
+            (ctypes.c_uint32 * size)(*[command[0] for command in commands]),
+            (ctypes.c_uint16 * size)(*[command[1] for command in commands])
+        )
+        self.libbacon.agb_write_rom_with_address_pipeline(commands[0], commands[1], size, hwaddr)
 
 def test_readrom(bacon):
     readsize = ROM_MAX_SIZE
