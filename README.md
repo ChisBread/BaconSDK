@@ -1,22 +1,23 @@
+# Bacon SDK
 
-# Improvement
+- Bacon烧录器的SDK，提供了烧录器的基本功能接口
+- Bacon SDK is the SDK of Bacon Flasher, which provides basic functional interfaces of the flasher
 
-## 1. Use Google Performance Tools
+## Build
+
+```bash
+mkdir build
+cd build
+cmake ..
+make -j4
+# test
+sudo ./bacon_cli test_readrom
+```
+
+## Optimization & Usage
+
+## 1. Use Google TCMalloc With Shared Library
 ```bash
 sudo apt-get install google-perftools libgoogle-perftools-dev
-```
-
-## 2. Use Google TCMalloc With Shared Library
-```bash
-LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libtcmalloc_minimal.so.4 ./your_program
-```
-
-## 3. Use Google TCMalloc With Static Library
-```bash
-g++ -std=c++20 -O3 bacon.cc -ltcmalloc_minimal
-```
-
-## 4. Run With ionice & nice
-```bash
-sudo ionice -c 3 -n 7 nice -n 20 ./your_program
+sudo LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libtcmalloc_minimal.so ./bacon_cli test_readrom
 ```
