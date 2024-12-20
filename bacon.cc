@@ -219,22 +219,22 @@ void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer) 
 
 // pipeline
 std::mutex pipeline_mutex;
-std::vector<bacon::BitArray> collect_commands;
+std::vector<bacon::BitArray> pipeline_commands;
 bacon::vecbytes fake_transfer_for_pipeline(const std::vector<bacon::BitArray> &commands) {
     std::lock_guard<std::mutex> lock(pipeline_mutex);
-    collect_commands.insert(collect_commands.end(), commands.begin(), commands.end());
+    pipeline_commands.insert(pipeline_commands.end(), commands.begin(), commands.end());
     return {};
 }
 
 void clear_pipeline() {
-    collect_commands.clear();
+    pipeline_commands.clear();
 }
 
 void execute_pipeline() {
     // SPI_BUFFER_SIZE
     int bits = -1;
     std::vector<bacon::BitArray> tx_commands;
-    for (auto &command : collect_commands) {
+    for (auto &command : pipeline_commands) {
         if (bits + 1 + command.size() >= SPI_BUFFER_SIZE*8) {
             bacon::transfer(tx_commands);
             tx_commands.clear();
@@ -246,7 +246,7 @@ void execute_pipeline() {
     if (tx_commands.size() > 0) {
         bacon::transfer(tx_commands);
     }
-    collect_commands.clear();
+    pipeline_commands.clear();
 }
 
 void agb_write_rom_sequential_pipeline(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset) {
