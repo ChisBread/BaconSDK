@@ -19,6 +19,7 @@ int spi_init(const char *user_path, uint32_t user_speed, unsigned char verbose);
 
 
 #ifdef __cplusplus
+
 namespace bacon {
 
     int spi_init(const char *user_path = nullptr, uint32_t user_speed = 0, bool verbose = true);
@@ -29,6 +30,7 @@ namespace bacon {
     vecbytes transfer(const BitArray &command);
 
 } // namespace bacon
+
 #endif
 
 #endif // __PLATFORM_H__

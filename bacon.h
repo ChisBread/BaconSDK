@@ -22,14 +22,17 @@ void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer);
 
 
 #ifdef __cplusplus
+
 namespace bacon {
+
 void ResetChip();
 vecbytes AGBReadROM(uint32_t addr, uint32_t size, bool hwaddr = false, bool reset = true);
 void AGBCartWriteROMSequential(uint32_t addr, const std::vector<uint16_t> &data, bool hwaddr = false, bool reset = true);
 void AGBWriteROMWithAddress(const std::vector<std::pair<uint32_t, uint16_t>> &commands, bool hwaddr = false);
 vecbytes AGBReadRAM(uint16_t addr, uint32_t size, bool reset = true);
-#endif
 
 } // namespace bacon
+
+#endif
 
 #endif // __BACON_H__
