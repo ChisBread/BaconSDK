@@ -18,7 +18,8 @@ set_target_properties(libbacon PROPERTIES OUTPUT_NAME "bacon")
 add_library(libbacon_static STATIC ${SOURCES})
 set_target_properties(libbacon_static PROPERTIES OUTPUT_NAME "bacon")
 
-install(TARGETS bacon_cli libbacon libbacon_static DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(TARGETS bacon_cli DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(TARGETS libbacon libbacon_static DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 
 
 
