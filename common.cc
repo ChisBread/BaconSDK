@@ -312,6 +312,17 @@ BitArray make_ram_write_cycle_with_addr(const std::vector<std::pair<uint16_t, ui
     return merge_cmds(commands);
 }
 
+BitArray make_ram_write_cycle_with_addr(std::vector<std::pair<uint16_t, uint8_t>>::const_iterator begin, std::vector<std::pair<uint16_t, uint8_t>>::const_iterator end) {
+    std::vector<BitArray> commands;
+    for (auto it = begin; it != end; it++) {
+        commands.push_back(merge_cmds({
+            make_cart_30bit_write_command(false, false, true, true, true, false, it->first, it->second),
+            make_gba_wr_rd_write_command(false, true)
+        }));
+    }
+    return merge_cmds(commands);
+}
+
 BitArray make_ram_write_cycle_command(uint16_t addr, const vecbytes &data) {
     std::vector<BitArray> commands;
     for (size_t i = 0; i < data.size(); i++) {
@@ -319,6 +330,18 @@ BitArray make_ram_write_cycle_command(uint16_t addr, const vecbytes &data) {
             make_cart_30bit_write_command(false, false, true, true, true, false, addr + i, data[i]),
             make_gba_wr_rd_write_command(false, true)
         }));
+    }
+    return merge_cmds(commands);
+}
+
+BitArray make_ram_write_cycle_command(uint16_t addr, std::vector<uint8_t>::const_iterator begin, std::vector<uint8_t>::const_iterator end) {
+    std::vector<BitArray> commands;
+    for (auto it = begin; it != end; it++) {
+        commands.push_back(merge_cmds({
+            make_cart_30bit_write_command(false, false, true, true, true, false, addr, *it),
+            make_gba_wr_rd_write_command(false, true)
+        }));
+        addr++;
     }
     return merge_cmds(commands);
 }

@@ -47,7 +47,9 @@ BitArray make_rom_write_cycle_command_sequential(const std::vector<uint16_t> &da
 BitArray make_rom_write_cycle_command_sequential(std::vector<uint16_t>::const_iterator begin, std::vector<uint16_t>::const_iterator end);
 BitArray make_gba_rom_addr_read_command();
 BitArray make_ram_write_cycle_with_addr(const std::vector<std::pair<uint16_t, uint8_t>> &addrdatalist);
+BitArray make_ram_write_cycle_with_addr(std::vector<std::pair<uint16_t, uint8_t>>::const_iterator begin, std::vector<std::pair<uint16_t, uint8_t>>::const_iterator end);
 BitArray make_ram_write_cycle_command(uint16_t addr, const vecbytes &data);
+BitArray make_ram_write_cycle_command(uint16_t addr, std::vector<uint8_t>::const_iterator begin, std::vector<uint8_t>::const_iterator end);
 BitArray make_ram_read_cycle_command(uint16_t addr = 0, int times = 1);
 vecbytes extract_ram_read_cycle_data(const vecbytes &data, int times = 1);
 vecbytes make_rom_read_cycle_command_with_cache(size_t times = 1);

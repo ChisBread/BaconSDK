@@ -180,6 +180,38 @@ vecbytes AGBReadRAM(uint16_t addr, uint32_t size, bool reset) {
     return readbytes;
 }
 
+void AGBWriteRAM(uint16_t addr, const vecbytes &data, bool reset) {
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_ram_write_cycle_command(0, {0}).size() + 1) - 1;
+    uint16_t start_addr = addr;
+    int cycle_times = 0;
+    for (size_t i = 0; i < data.size(); i++) {
+        cycle_times += 1;
+        if (cycle_times == MAX_TIMES || i == data.size() - 1 && cycle_times > 0) {
+            transfer({make_ram_write_cycle_command(start_addr, data.begin() + i + 1 - cycle_times, data.begin() + i + 1)});
+            start_addr += cycle_times;
+            cycle_times = 0;
+        }
+    }
+    if (reset) {
+        transfer({make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
+    }
+}
+
+void AGBWriteRAMWithAddress(const std::vector<std::pair<uint16_t, uint8_t>> &commands, bool reset, transfer_func transfer) {
+    static int MAX_TIMES = SPI_BUFFER_SIZE*8 / (make_ram_write_cycle_with_addr({{0, 0}}).size() + 1) - 1;
+    int cycle_times = 0;
+    for (size_t i = 0; i < commands.size(); i++) {
+        cycle_times += 1;
+        if (cycle_times == MAX_TIMES || i == commands.size() - 1) {
+            transfer({make_ram_write_cycle_with_addr(commands.begin() + i + 1 - cycle_times, commands.begin() + i + 1)});
+            cycle_times = 0;
+        }
+    }
+    if (reset) {
+        transfer({make_cart_30bit_write_command(false, false, true, true, true, true, 0, 0)});
+    }
+}
+
 ///////// C++ Interface /////////
 
 } // namespace bacon
@@ -217,6 +249,21 @@ void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer) 
     std::copy(ret.begin(), ret.end(), rx_buffer);
 }
 
+void agb_write_ram(uint16_t addr, const uint8_t *data, size_t size, bool reset) {
+    bacon::vecbytes data_vec(data, data + size);
+    bacon::AGBWriteRAM(addr, data_vec, reset);
+}
+
+void agb_write_ram_with_address(uint16_t *addrs, uint8_t *datas, size_t size, bool reset) {
+    std::vector<std::pair<uint16_t, uint8_t>> commands_vec;
+    for (size_t i = 0; i < size; i++) {
+        commands_vec.push_back({addrs[i], datas[i]});
+    }
+    bacon::AGBWriteRAMWithAddress(commands_vec, reset);
+}
+
+
+
 // pipeline
 std::mutex pipeline_mutex;
 std::vector<bacon::BitArray> pipeline_commands;
@@ -231,6 +278,9 @@ void clear_pipeline() {
 }
 
 void execute_pipeline() {
+    if (pipeline_commands.empty()) {
+        return;
+    }
     // SPI_BUFFER_SIZE
     int bits = -1;
     std::vector<bacon::BitArray> tx_commands;
@@ -261,6 +311,15 @@ void agb_write_rom_with_address_pipeline(uint32_t *addrs, uint16_t *datas, size_
     }
     bacon::AGBWriteROMWithAddress(commands_vec, hwaddr, fake_transfer_for_pipeline);
 }
+
+void agb_write_ram_with_address_pipeline(uint16_t *addrs, uint8_t *datas, size_t size, bool reset) {
+    std::vector<std::pair<uint16_t, uint8_t>> commands_vec;
+    for (size_t i = 0; i < size; i++) {
+        commands_vec.push_back({addrs[i], datas[i]});
+    }
+    bacon::AGBWriteRAMWithAddress(commands_vec, reset, fake_transfer_for_pipeline);
+}
+
 
 
 ///////// C Interface /////////
