@@ -21,6 +21,13 @@
 # void agb_write_rom_sequential_bytes_pipeline(uint32_t addr, const uint8_t *data, size_t size, bool hwaddr, bool reset);
 # void agb_write_rom_with_address_pipeline(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr, bool reset);
 # void agb_write_ram_with_address_pipeline(uint16_t *addrs, uint8_t *datas, size_t size, bool reset);
+### handler
+# struct pipeline_handler;
+# pipeline_handler* new_pipeline_handler();
+# void free_pipeline_handler(pipeline_handler *handler);
+# void execute_pipeline_with_handler(pipeline_handler *handler, size_t idx);
+# pipeline_handler* agb_write_rom_sequential_bytes_pipeline_with_handler(uint32_t addr, const uint8_t *data, size_t size, bool hwaddr, bool reset, pipeline_handler *handler);
+# pipeline_handler* agb_write_rom_with_address_pipeline_with_handler(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr, bool reset, pipeline_handler *handler);
 
 import ctypes
 import os
@@ -89,6 +96,18 @@ class Bacon:
         self.libbacon.agb_write_rom_with_address_pipeline.restype = None
         self.libbacon.agb_write_ram_with_address_pipeline.argtypes = [ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_bool]
         self.libbacon.agb_write_ram_with_address_pipeline.restype = None
+
+        self.libbacon.new_pipeline_handler.argtypes = []
+        self.libbacon.new_pipeline_handler.restype = ctypes.c_void_p
+        self.libbacon.free_pipeline_handler.argtypes = [ctypes.c_void_p]
+        self.libbacon.free_pipeline_handler.restype = None
+        self.libbacon.execute_pipeline_with_handler.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+        self.libbacon.execute_pipeline_with_handler.restype = None
+        self.libbacon.agb_write_rom_sequential_bytes_pipeline_with_handler.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool, ctypes.c_void_p]
+        self.libbacon.agb_write_rom_sequential_bytes_pipeline_with_handler.restype = ctypes.c_void_p
+        self.libbacon.agb_write_rom_with_address_pipeline_with_handler.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool, ctypes.c_void_p]
+        self.libbacon.agb_write_rom_with_address_pipeline_with_handler.restype = ctypes.c_void_p
+
 
         if auto_connect:
             self.spi_init(b"/dev/spidev3.0", 32000000, False)
@@ -174,6 +193,24 @@ class Bacon:
         )
         self.libbacon.agb_write_ram_with_address_pipeline(commands[0], commands[1], size, reset)
 
+    def new_pipeline_handler(self):
+        return self.libbacon.new_pipeline_handler()
+    def free_pipeline_handler(self, handler):
+        return self.libbacon.free_pipeline_handler(handler)
+    def execute_pipeline_with_handler(self, handler, idx=0):
+        return self.libbacon.execute_pipeline_with_handler(handler, idx)
+    def agb_write_rom_sequential_bytes_pipeline_with_handler(self, handler, addr, data: bytes, hwaddr = False, reset = True):
+        size = len(data)
+        data = (ctypes.c_uint8 * size)(*data)
+        return self.libbacon.agb_write_rom_sequential_bytes_pipeline_with_handler(addr, data, size, hwaddr, reset, handler)
+    def agb_write_rom_with_address_pipeline_with_handler(self, handler, commands, hwaddr = False, reset = True):
+        size = len(commands)
+        commands = (
+            (ctypes.c_uint32 * size)(*[command[0] for command in commands]),
+            (ctypes.c_uint16 * size)(*[command[1] for command in commands])
+        )
+        return self.libbacon.agb_write_rom_with_address_pipeline_with_handler(commands[0], commands[1], size, hwaddr, reset, handler)
+
     ################# 兼容FlashGBX的接口 #################
     def Close(self):
         self.spi_close()
@@ -211,7 +248,7 @@ class Bacon:
     def AGBWriteRAMWithAddress(self, commands: list, reset=True, callback=None) -> BaconWritePipeline:
         self.agb_write_ram_with_address_pipeline(commands, reset)
         return BaconWritePipeline(self.execute_pipeline)
-    
+
 def test_readrom(bacon):
     readsize = ROM_MAX_SIZE
     start = time.time() * 1000

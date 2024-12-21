@@ -28,6 +28,9 @@ namespace bacon {
     void transfer(uint8_t const *tx, uint8_t *rx, size_t len);
     vecbytes transfer(const vecbytes &tx_buffer);
     vecbytes transfer(const std::vector<BitArray> &commands);
+    inline vecbytes transfer_cmds(const std::vector<BitArray> &commands) {
+        return transfer(commands);
+    }
     vecbytes transfer(const BitArray &command);
 
 } // namespace bacon

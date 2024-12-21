@@ -381,5 +381,64 @@ void agb_write_ram_with_address_pipeline(uint16_t *addrs, uint8_t *datas, size_t
 }
 
 
+struct pipeline_handler {
+public:
+    std::vector<bacon::BitArray> pipeline_commands;
+};
+
+
+pipeline_handler* new_pipeline_handler() {
+    return new pipeline_handler();
+}
+void free_pipeline_handler(pipeline_handler *handler) {
+    delete handler;
+}
+void execute_pipeline_with_handler(pipeline_handler *handler, size_t idx) {
+    handler = handler + idx;
+    if (handler->pipeline_commands.empty()) {
+        return;
+    }
+    // SPI_BUFFER_SIZE
+    int bits = -1;
+    std::vector<bacon::BitArray> tx_commands;
+    for (auto &command : handler->pipeline_commands) {
+        if (bits + 15 + command.size() >= SPI_BUFFER_SIZE*8) {
+            bacon::transfer(tx_commands);
+            tx_commands.clear();
+            bits = -1;
+        }
+        tx_commands.push_back(command);
+        bits += command.size() + 1;
+    }
+    if (tx_commands.size() > 0) {
+        bacon::transfer(tx_commands);
+    }
+    handler->pipeline_commands.clear();
+}
+
+
+pipeline_handler* agb_write_rom_sequential_bytes_pipeline_with_handler(uint32_t addr, const uint8_t *data, size_t size, bool hwaddr, bool reset, pipeline_handler *handler) {
+    std::vector<uint16_t> data16;
+    data16.reserve(size / 2);
+    for (size_t i = 0; i < size; i += 2) {
+        data16.push_back(uint16_t(data[i + 1] << 8) | data[i]);
+    }
+    bacon::AGBWriteROMSequential(addr, data16, hwaddr, reset, [handler](const std::vector<bacon::BitArray> &commands) -> bacon::vecbytes {
+        handler->pipeline_commands.insert(handler->pipeline_commands.end(), commands.begin(), commands.end());
+        return {};
+    });
+    return handler;
+}
+pipeline_handler* agb_write_rom_with_address_pipeline_with_handler(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr, bool reset, pipeline_handler *handler) {
+    std::vector<std::pair<uint32_t, uint16_t>> commands_vec;
+    for (size_t i = 0; i < size; i++) {
+        commands_vec.push_back({addrs[i], datas[i]});
+    }
+    bacon::AGBWriteROMWithAddress(commands_vec, hwaddr, reset, [handler](const std::vector<bacon::BitArray> &commands) -> bacon::vecbytes {
+        handler->pipeline_commands.insert(handler->pipeline_commands.end(), commands.begin(), commands.end());
+        return {};
+    });
+    return handler;
+}
 
 ///////// C Interface /////////
