@@ -142,14 +142,24 @@ BitArray make_cart_30bit_write_command(
     return command;
 }
 
-BitArray make_gba_wr_rd_write_command(bool wr, bool rd) {
+BitArray _make_gba_wr_rd_write_command(bool wr, bool rd) {
     BitArray command({0, 0, 1, 0, 1});
     command.push_back(wr);
     command.push_back(rd);
     return command;
 }
 
-BitArray make_v16bit_data_write_command(uint16_t data, bool flip) {
+BitArray wr_rd_write_command_cache[2][2] = {
+    {_make_gba_wr_rd_write_command(false, false), _make_gba_wr_rd_write_command(false, true)},
+    {_make_gba_wr_rd_write_command(true, false), _make_gba_wr_rd_write_command(true, true)}
+};
+
+const BitArray& make_gba_wr_rd_write_command(bool wr, bool rd) {
+    return wr_rd_write_command_cache[wr][rd];
+}
+
+
+BitArray _make_v16bit_data_write_command(uint16_t data, bool flip) {
     BitArray command({0, 1, 0, 0, 1});
     if (flip) {
         command = BitArray({0, 1, 1, 0, 0});
@@ -158,6 +168,17 @@ BitArray make_v16bit_data_write_command(uint16_t data, bool flip) {
     BitArray v16bit(vecbytes{uint8_t((data >> 8) & 0xff), uint8_t(data & 0xff)});
     command.push_back(v16bit);
     return command;
+}
+BitArray v16bit_data_write_cache[0xFFFF+1][2];
+void init_v16bit_data_write_cache() {
+    for (int i = 0; i < 0xFFFF+1; i++) {
+        v16bit_data_write_cache[i][0] = _make_v16bit_data_write_command(i, false);
+        v16bit_data_write_cache[i][1] = _make_v16bit_data_write_command(i, true);
+    }
+}
+
+BitArray make_v16bit_data_write_command(uint16_t data, bool flip) {
+    return v16bit_data_write_cache[data][flip];
 }
 
 BitArray make_gba_rom_data_write_command(uint16_t data, bool flip) {
@@ -444,6 +465,7 @@ int init_all_cache(size_t spi_buffer_size) {
     init_reverse_bits_table();
     init_rom_read_cycle_command_cache(spi_buffer_size);
     init_ram_read_cycle_command_cache(spi_buffer_size);
+    init_v16bit_data_write_cache();
     return 0;
 }
 

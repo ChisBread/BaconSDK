@@ -10,14 +10,16 @@
 # int agb_read_cart_30bit(char **keys, uint32_t *values, size_t size);
 # void agb_read_rom(uint32_t addr, uint32_t size, bool hwaddr, bool reset, uint8_t *rx_buffer);
 # void agb_write_rom_sequential(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset);
-# void agb_write_rom_with_address(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr)
+# void agb_write_rom_sequential_bytes(uint32_t addr, const uint8_t *data, size_t size, bool hwaddr, bool reset);
+# void agb_write_rom_with_address(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr, bool reset);
 # void agb_read_ram(uint16_t addr, uint32_t size, bool reset, uint8_t *rx_buffer);
 # void agb_write_ram(uint16_t addr, const uint8_t *data, size_t size, bool reset);
 # void agb_write_ram_with_address(uint16_t *addrs, uint8_t *datas, size_t size, bool reset);
 # void clear_pipeline();
 # void execute_pipeline();
 # void agb_write_rom_sequential_pipeline(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset);
-# void agb_write_rom_with_address_pipeline(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr);
+# void agb_write_rom_sequential_bytes_pipeline(uint32_t addr, const uint8_t *data, size_t size, bool hwaddr, bool reset);
+# void agb_write_rom_with_address_pipeline(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr, bool reset);
 # void agb_write_ram_with_address_pipeline(uint16_t *addrs, uint8_t *datas, size_t size, bool reset);
 
 import ctypes
@@ -65,7 +67,9 @@ class Bacon:
         self.libbacon.agb_read_rom.restype = None
         self.libbacon.agb_write_rom_sequential.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
         self.libbacon.agb_write_rom_sequential.restype = None
-        self.libbacon.agb_write_rom_with_address.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool]
+        self.libbacon.agb_write_rom_sequential_bytes.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
+        self.libbacon.agb_write_rom_sequential_bytes.restype = None
+        self.libbacon.agb_write_rom_with_address.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
         self.libbacon.agb_write_rom_with_address.restype = None
         self.libbacon.agb_read_ram.argtypes = [ctypes.c_uint16, ctypes.c_uint32, ctypes.c_bool, ctypes.POINTER(ctypes.c_uint8)]
         self.libbacon.agb_read_ram.restype = None
@@ -80,13 +84,14 @@ class Bacon:
         self.libbacon.execute_pipeline.restype = None
         self.libbacon.agb_write_rom_sequential_pipeline.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
         self.libbacon.agb_write_rom_sequential_pipeline.restype = None
-        self.libbacon.agb_write_rom_with_address_pipeline.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool]
+        self.libbacon.agb_write_rom_sequential_bytes_pipeline.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
+        self.libbacon.agb_write_rom_with_address_pipeline.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
         self.libbacon.agb_write_rom_with_address_pipeline.restype = None
         self.libbacon.agb_write_ram_with_address_pipeline.argtypes = [ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_bool]
         self.libbacon.agb_write_ram_with_address_pipeline.restype = None
 
         if auto_connect:
-            self.spi_init(b"/dev/spidev3.0", 32000000, True)
+            self.spi_init(b"/dev/spidev3.0", 32000000, False)
 
         self.power = 0
 
@@ -120,18 +125,18 @@ class Bacon:
         self.libbacon.agb_read_rom(addr, size, hwaddr, reset, rx_buffer)
         return rx_buffer
 
-    def agb_write_rom_sequential(self, addr, data, hwaddr = False, reset = True):
+    def agb_write_rom_sequential(self, addr, data: bytes, hwaddr = False, reset = True):
         size = len(data)
-        data = (ctypes.c_uint16 * size)(*data)
-        self.libbacon.agb_write_rom_sequential(addr, data, size, hwaddr, reset)
+        data = (ctypes.c_uint8 * size)(*data)
+        self.libbacon.agb_write_rom_sequential_bytes(addr, data, size, hwaddr, reset)
 
-    def agb_write_rom_with_address(self, commands, hwaddr = False):
+    def agb_write_rom_with_address(self, commands, hwaddr = False, reset = True):
         size = len(commands)
         commands = (
             (ctypes.c_uint32 * size)(*[command[0] for command in commands]),
             (ctypes.c_uint16 * size)(*[command[1] for command in commands])
         )
-        self.libbacon.agb_write_rom_with_address(commands[0], commands[1], size, hwaddr)
+        self.libbacon.agb_write_rom_with_address(commands[0], commands[1], size, hwaddr, reset)
 
     def agb_read_ram(self, addr, size, reset = True):
         rx_buffer = (ctypes.c_uint8 * size)()
@@ -148,18 +153,18 @@ class Bacon:
     def execute_pipeline(self):
         return self.libbacon.execute_pipeline()
     
-    def agb_write_rom_sequential_pipeline(self, addr, data, hwaddr = False, reset = True):
+    def agb_write_rom_sequential_pipeline(self, addr, data: bytes, hwaddr = False, reset = True):
         size = len(data)
-        data = (ctypes.c_uint16 * size)(*data)
-        self.libbacon.agb_write_rom_sequential_pipeline(addr, data, size, hwaddr, reset)
+        data = (ctypes.c_uint8 * size)(*data)
+        self.libbacon.agb_write_rom_sequential_bytes_pipeline(addr, data, size, hwaddr, reset)
 
-    def agb_write_rom_with_address_pipeline(self, commands, hwaddr = False):
+    def agb_write_rom_with_address_pipeline(self, commands, hwaddr = False, reset = True):
         size = len(commands)
         commands = (
             (ctypes.c_uint32 * size)(*[command[0] for command in commands]),
             (ctypes.c_uint16 * size)(*[command[1] for command in commands])
         )
-        self.libbacon.agb_write_rom_with_address_pipeline(commands[0], commands[1], size, hwaddr)
+        self.libbacon.agb_write_rom_with_address_pipeline(commands[0], commands[1], size, hwaddr, reset)
 
     def agb_write_ram_with_address_pipeline(self, commands, reset = True):
         size = len(commands)
@@ -262,8 +267,49 @@ def read_flashid(bacon):
     bacon.agb_write_rom_with_address_pipeline([[0, 0xF0]])
     bacon.execute_pipeline()
     return flashid
-    
-        
+def rewrite_first_sector(bacon, addr=0):
+    ret = bytes(bacon.agb_read_rom(addr, 0x20000))
+    print("Data", ret[:10].hex())
+    bacon.agb_write_rom_with_address_pipeline([
+        [0xAAA, 0xAA],
+        [0x555, 0x55],
+        [0xAAA, 0x80],
+        [0xAAA, 0xAA],
+        [0x555, 0x55],
+        [addr, 0x30]
+    ])
+    bacon.execute_pipeline()
+    while True:
+        ret = bytes(bacon.agb_read_rom(addr, 0x20000))
+        if ret == b"\xFF" * 0x20000:
+            break
+        print("Sector erase wait.", ret[:10].hex())
+        time.sleep(0.1)
+    print("Sector erase success.")
+    flash_buffer_write = [
+        [0xAAA, 0xAA],
+        [0x555, 0x55],
+        [addr, 0x25],
+        [addr, 0xFF],
+    ]
+    flash_buffer_write_commit = [
+        [addr, 0x29]
+    ]
+    for i in range(0, 0x20000, 0x200): # buffer 512byte
+        bacon.agb_write_rom_with_address_pipeline(flash_buffer_write, False, True)
+        bacon.agb_write_rom_sequential_pipeline(addr + i, b"\x00" * 0x200, False, False)
+        bacon.agb_write_rom_with_address_pipeline(flash_buffer_write_commit, False, True)
+        bacon.execute_pipeline()
+        ret = bytes(bacon.agb_read_rom(addr + i,0x200))
+        retry = 0
+        while ret != b"\x00" * 0x200:
+            print("Write wait.", ret[:10].hex())
+            time.sleep(0.1)
+            if retry > 100:
+                print("Write failed.")
+                return
+            retry += 1
+        print("Write success.")
 if __name__ == "__main__":
     bacon = Bacon()
     bacon.power_control(True, False) # 3.3V
@@ -275,5 +321,7 @@ if __name__ == "__main__":
         test_writeram(bacon)
     elif sys.argv[1] == "read_flashid":
         read_flashid(bacon)
+    elif sys.argv[1] == "rewrite_first_sector":
+        rewrite_first_sector(bacon)
     bacon.power_control(False, False) # 0V
     bacon.spi_close()

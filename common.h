@@ -30,7 +30,7 @@ BitArray make_cart_30bit_write_command(
     bool cs1 = true, bool cs2 = true, 
     // 小端模式
     uint16_t v16 = 0, uint8_t v8 = 0);
-BitArray make_gba_wr_rd_write_command(bool wr, bool rd);
+const BitArray& make_gba_wr_rd_write_command(bool wr, bool rd);
 BitArray make_v16bit_data_write_command(uint16_t data, bool flip = false);
 BitArray make_gba_rom_data_write_command(uint16_t data, bool flip = false);
 BitArray make_rom_read_cycle_command_30bit(int times = 1);
@@ -39,10 +39,10 @@ BitArray make_gba_rom_data_read_command(bool flip = false);
 BitArray make_rom_read_cycle_command(int times = 1);
 std::vector<uint16_t> extract_read_cycle_data(const vecbytes &data, int times = 1);
 BitArray make_gba_rom_cs_write(bool cs);
-BitArray make_rom_write_cycle_command_with_addr(const std::vector<std::pair<uint32_t, uint16_t>> &addrdatalist, bool hwaddr = true);
+BitArray make_rom_write_cycle_command_with_addr(const std::vector<std::pair<uint32_t, uint16_t>> &addrdatalist, bool hwaddr = false);
 BitArray make_rom_write_cycle_command_with_addr(
     std::vector<std::pair<uint32_t, uint16_t>>::const_iterator begin, 
-    std::vector<std::pair<uint32_t, uint16_t>>::const_iterator end, bool hwaddr = true);
+    std::vector<std::pair<uint32_t, uint16_t>>::const_iterator end, bool hwaddr = false);
 BitArray make_rom_write_cycle_command_sequential(const std::vector<uint16_t> &datalist);
 BitArray make_rom_write_cycle_command_sequential(std::vector<uint16_t>::const_iterator begin, std::vector<uint16_t>::const_iterator end);
 BitArray make_gba_rom_addr_read_command();
