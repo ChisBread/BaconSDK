@@ -74,9 +74,6 @@ int spi_init(const char *user_path, uint32_t user_speed, bool verbose) {
 }
 
 void spi_close() {
-    if (fd == -1) {
-        return;
-    }
     close(fd);
 }
 

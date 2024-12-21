@@ -6,6 +6,8 @@
 # void spi_close();
 # void reset_chip();
 # int power_control(bool v3_3v, bool v5v);
+# int read_power();
+# int agb_read_cart_30bit(char **keys, uint32_t *values, size_t size);
 # void agb_read_rom(uint32_t addr, uint32_t size, bool hwaddr, bool reset, uint8_t *rx_buffer);
 # void agb_write_rom_sequential(uint32_t addr, const uint16_t *data, size_t size, bool hwaddr, bool reset);
 # void agb_write_rom_with_address(uint32_t *addrs, uint16_t *datas, size_t size, bool hwaddr)
@@ -55,6 +57,10 @@ class Bacon:
         self.libbacon.reset_chip.restype = None
         self.libbacon.power_control.argtypes = [ctypes.c_bool, ctypes.c_bool]
         self.libbacon.power_control.restype = ctypes.c_int
+        self.libbacon.read_power.argtypes = []
+        self.libbacon.read_power.restype = ctypes.c_int
+        self.libbacon.agb_read_cart_30bit.argtypes = [ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t]
+        self.libbacon.agb_read_cart_30bit.restype = ctypes.c_int
         self.libbacon.agb_read_rom.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_bool, ctypes.c_bool, ctypes.POINTER(ctypes.c_uint8)]
         self.libbacon.agb_read_rom.restype = None
         self.libbacon.agb_write_rom_sequential.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_bool, ctypes.c_bool]
@@ -94,11 +100,20 @@ class Bacon:
         return self.libbacon.reset_chip()
 
     def power_control(self, v3_3v, v5v):
-        if v3_3v:
-            self.power = 3
-        if v5v:
-            self.power = 5
         return self.libbacon.power_control(v3_3v, v5v)
+
+    def read_power(self):
+        return self.libbacon.read_power()
+
+    def agb_read_cart_30bit(self):
+        keys = (ctypes.c_char_p * 30)( *[b"000000000000" for i in range(30)] )
+        values = (ctypes.c_uint32 * 30)( *[0 for i in range(30)] )
+        size = 30
+        ret = self.libbacon.agb_read_cart_30bit(keys, values, size)
+        if ret == 0:
+            return dict([(key.decode("utf-8"), value) for key, value in zip(keys, values)])
+        else:
+            return None
 
     def agb_read_rom(self, addr, size, hwaddr = False, reset = True):
         rx_buffer = (ctypes.c_uint8 * size)()
@@ -161,6 +176,12 @@ class Bacon:
         self.reset_chip()
         return BaconWritePipeline(self.execute_pipeline)
     def PowerControl(self, v3_3v, v5v):
+        if v3_3v:
+            self.power = 3
+        elif v5v:
+            self.power = 5
+        else:
+            self.power = 0
         self.power_control(v3_3v, v5v)
         return BaconWritePipeline(self.execute_pipeline)
     def AGBReadROM(self, addr: int, size: int, reset=True, callback=None) -> bytes:
@@ -226,7 +247,22 @@ def test_writeram(bacon):
             print("Check RAM data success.")
         else:
             print("Check RAM data failed.")
-
+def read_flashid(bacon):
+    flashid = bytes(bacon.agb_read_rom(0, 4))
+    print("Data 0-3: %s" % flashid.hex())
+    bacon.agb_write_rom_with_address_pipeline([
+        [0xAAA, 0xAA],
+        [0x555, 0x55],
+        [0xAAA, 0x90]
+    ])
+    bacon.execute_pipeline()
+    flashid = bytes(bacon.agb_read_rom(0, 4))
+    print("Flash ID: %s" % flashid.hex())
+    # reset
+    bacon.agb_write_rom_with_address_pipeline([[0, 0xF0]])
+    bacon.execute_pipeline()
+    return flashid
+    
         
 if __name__ == "__main__":
     bacon = Bacon()
@@ -237,5 +273,7 @@ if __name__ == "__main__":
         test_readram(bacon)
     elif sys.argv[1] == "test_writeram":
         test_writeram(bacon)
+    elif sys.argv[1] == "read_flashid":
+        read_flashid(bacon)
     bacon.power_control(False, False) # 0V
     bacon.spi_close()
