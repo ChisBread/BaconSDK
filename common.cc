@@ -192,11 +192,14 @@ BitArray __readcyclecmd_30bit = merge_cmds({
     make_gba_wr_rd_write_command(true, true)});
 
 BitArray make_rom_read_cycle_command_30bit(int times) {
-    std::vector<BitArray> commands;
+    BitArray commands;
     for (int i = 0; i < times; i++) {
         commands.push_back(__readcyclecmd_30bit);
+        if (i != times - 1) {
+            commands.push_back(0);
+        }
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 std::vector<std::unordered_map<std::string, uint32_t>> extract_read_cycle_data_30bit(const vecbytes &data, int times) {
@@ -231,12 +234,14 @@ BitArray __readcyclecmd = merge_cmds({
 
 
 BitArray make_rom_read_cycle_command(int times) {
-    std::vector<BitArray> commands;
-    commands.reserve(times*__readcyclecmd.size() + times - 1);
+    BitArray commands;
     for (int i = 0; i < times; i++) {
         commands.push_back(__readcyclecmd);
+        if (i != times - 1) {
+            commands.push_back(0);
+        }
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 std::vector<uint16_t> extract_read_cycle_data(const vecbytes &data, int times) {
@@ -259,59 +264,45 @@ BitArray make_gba_rom_cs_write(bool cs) {
 }
 
 BitArray make_rom_write_cycle_command_with_addr(const std::vector<std::pair<uint32_t, uint16_t>> &addrdatalist, bool hwaddr) {
-    std::vector<BitArray> commands;
-    for (auto &kv : addrdatalist) {
-        auto addr = kv.first;
-        if (!hwaddr) {
-            addr = addr / 2;
-        }
-        commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF),
-            make_gba_rom_cs_write(false),
-            make_gba_rom_data_write_command(kv.second, true)
-        }));
-    }
-    return merge_cmds(commands);
+    return make_rom_write_cycle_command_with_addr(addrdatalist.begin(), addrdatalist.end(), hwaddr);
 }
 
 BitArray make_rom_write_cycle_command_with_addr(
     std::vector<std::pair<uint32_t, uint16_t>>::const_iterator begin, 
     std::vector<std::pair<uint32_t, uint16_t>>::const_iterator end, bool hwaddr) {
-    std::vector<BitArray> commands;
+    BitArray commands;
     for (auto it = begin; it != end; it++) {
         auto addr = it->first;
         if (!hwaddr) {
             addr = addr / 2;
         }
-        commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF),
-            make_gba_rom_cs_write(false),
-            make_gba_rom_data_write_command(it->second, true)
-        }));
+        commands.push_back(make_cart_30bit_write_command(false, false, true, true, true, true, addr & 0xFFFF, (addr >> 16) & 0xFF));
+        commands.push_back(0);
+        commands.push_back(make_gba_rom_cs_write(false));
+        commands.push_back(0);
+        commands.push_back(make_gba_rom_data_write_command(it->second, true));
+        if (it != end - 1) {
+            commands.push_back(0);
+        }
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 BitArray make_rom_write_cycle_command_sequential(const std::vector<uint16_t> &datalist) {
-    std::vector<BitArray> commands;
-    for (size_t i = 0; i < datalist.size(); i++) {
-        commands.push_back(merge_cmds({
-            make_gba_wr_rd_write_command(true, true),
-            make_gba_rom_data_write_command(datalist[i], true)
-        }));
-    }
-    return merge_cmds(commands);
+    return make_rom_write_cycle_command_sequential(datalist.begin(), datalist.end());
 }
 
 BitArray make_rom_write_cycle_command_sequential(std::vector<uint16_t>::const_iterator begin, std::vector<uint16_t>::const_iterator end) {
-    std::vector<BitArray> commands;
+    BitArray commands;
     for (auto it = begin; it != end; it++) {
-        commands.push_back(merge_cmds({
-            make_gba_wr_rd_write_command(true, true),
-            make_gba_rom_data_write_command(*it, true)
-        }));
+        commands.push_back(make_gba_wr_rd_write_command(true, true));
+        commands.push_back(0);
+        commands.push_back(make_gba_rom_data_write_command(*it, true));
+        if (it != end - 1) {
+            commands.push_back(0);
+        }
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 BitArray make_gba_rom_addr_read_command() {
@@ -323,59 +314,51 @@ BitArray make_gba_rom_addr_read_command() {
 }
 
 BitArray make_ram_write_cycle_with_addr(const std::vector<std::pair<uint16_t, uint8_t>> &addrdatalist) {
-    std::vector<BitArray> commands;
-    for (auto &kv : addrdatalist) {
-        commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, false, kv.first, kv.second),
-            make_gba_wr_rd_write_command(false, true)
-        }));
-    }
-    return merge_cmds(commands);
+    return make_ram_write_cycle_with_addr(addrdatalist.begin(), addrdatalist.end());
 }
 
 BitArray make_ram_write_cycle_with_addr(std::vector<std::pair<uint16_t, uint8_t>>::const_iterator begin, std::vector<std::pair<uint16_t, uint8_t>>::const_iterator end) {
-    std::vector<BitArray> commands;
+    BitArray commands;
     for (auto it = begin; it != end; it++) {
-        commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, false, it->first, it->second),
-            make_gba_wr_rd_write_command(false, true)
-        }));
+        commands.push_back(make_cart_30bit_write_command(false, false, true, true, true, false, it->first, it->second));
+        commands.push_back(0);
+        commands.push_back(make_gba_wr_rd_write_command(false, true));
+        if (it != end - 1) {
+            commands.push_back(0);
+        }
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 BitArray make_ram_write_cycle_command(uint16_t addr, const vecbytes &data) {
-    std::vector<BitArray> commands;
-    for (size_t i = 0; i < data.size(); i++) {
-        commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, false, addr + i, data[i]),
-            make_gba_wr_rd_write_command(false, true)
-        }));
-    }
-    return merge_cmds(commands);
+    return make_ram_write_cycle_command(addr, data.begin(), data.end());
 }
 
 BitArray make_ram_write_cycle_command(uint16_t addr, std::vector<uint8_t>::const_iterator begin, std::vector<uint8_t>::const_iterator end) {
-    std::vector<BitArray> commands;
+    BitArray commands;
     for (auto it = begin; it != end; it++) {
-        commands.push_back(merge_cmds({
-            make_cart_30bit_write_command(false, false, true, true, true, false, addr, *it),
-            make_gba_wr_rd_write_command(false, true)
-        }));
+        commands.push_back(make_cart_30bit_write_command(false, false, true, true, true, false, addr, *it));
+        commands.push_back(0);
+        commands.push_back(make_gba_wr_rd_write_command(false, true));
+        if (it != end - 1) {
+            commands.push_back(0);
+        }
         addr++;
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 BitArray make_ram_read_cycle_command(uint16_t addr, int times) {
-    std::vector<BitArray> commands;
+    BitArray commands;
     for (int i = 0; i < times; i++) {
-        commands.push_back(merge_cmds({
-            make_v16bit_data_write_command(addr + i),
-            make_gba_rom_addr_read_command()
-        }));
+        commands.push_back(make_v16bit_data_write_command(addr + i));
+        commands.push_back(0);
+        commands.push_back(make_gba_rom_addr_read_command());
+        if (i != times - 1) {
+            commands.push_back(0);
+        }
     }
-    return merge_cmds(commands);
+    return commands;
 }
 
 size_t __len_of_v16bit_write = make_v16bit_data_write_command(0).size();
